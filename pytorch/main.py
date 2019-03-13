@@ -7,7 +7,7 @@ import pandas as pd
 from tqdm import tqdm, trange
 
 from data_loader import get_loader
-from model import SimpleLSTMModel, ImprovedLSTMModel, GloveModel
+from model import SimpleLSTMModel, ImprovedLSTMModel, GloveModel, BestModel
 
 # device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -18,12 +18,16 @@ def train_and_validate(model, model_path, train_data, valid_data, learning_rate,
 
     criterion = nn.CrossEntropyLoss()
     best_acc = 0
-
+    cycles = 0
     for epoch in trange(total_epoch):
         correct = 0
         total = 0
         train_data = tqdm(train_data)
         model.train()
+        if cycles == 3:
+            print("switching to ASGD")
+            optimizer = torch.optim.ASGD(model.parameters(), lr=learning_rate)
+        
         for i, (label, seq, length) in enumerate(train_data):
             # sort by descending order for packing
             length, permute = length.sort(dim=0, descending=True)
@@ -46,13 +50,16 @@ def train_and_validate(model, model_path, train_data, valid_data, learning_rate,
             total += output.size(0)
 
         # print epoch accuracy
-        print("training accuracy: {}/{} ".format(correct, total), correct / total)
+        print(f"training accuracy: {correct}/{total} ", correct / total)
         valid_acc = validate(model, valid_data)
 
         # keep best acc model
         if valid_acc > best_acc:
             torch.save(model.state_dict(), model_path)
             best_acc = valid_acc
+            cycles = 0
+        else:
+            cycles += 1
 
 
 def train(model, train_data, learning_rate, total_epoch, logging_rate):
@@ -110,7 +117,7 @@ def validate(model, valid_data):
             output = torch.argmax(output, 1)
             correct += (output == label).sum().item()
             total += output.size(0)
-    print("validation accuracy: {}/{} ".format(correct, total), correct / total)
+    print(f"validation accuracy: {correct}/{total} ", correct / total)
     return correct / total
 
 
@@ -137,7 +144,14 @@ def main(config):
     )
 
     # model
-    if config.model == "simple-lstm":
+    if config.model == "best":
+        glove = vocab.get_embedding('fasttext', 300)
+        model = BestModel(300,
+                          config.hidden_size,
+                          config.dropout_rate,
+                          glove).to(device)
+
+    elif config.model == "simple-lstm":
         model = SimpleLSTMModel(config.embedding_size,
                                 config.hidden_size,
                                 config.dropout_rate,
@@ -200,8 +214,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # setup parameters
-    parser.add_argument("--model", type=str, default="simple-lstm",
-                        choices=["simple-lstm", "bidirectional-lstm", "glove-lstm", "fasttext-lstm", "ulm", "bert"])
+    parser.add_argument("--model", type=str, default="best",
+                        choices=["best", "simple-lstm", "bidirectional-lstm", "glove-lstm", "fasttext-lstm", "ulm",
+                                 "bert"])
     parser.add_argument('--data', type=str, default='.root')
     parser.add_argument("--model_dir", type=str, default='./models')
     parser.add_argument("--vocab_path", type=str, default='vocab.pkl')
@@ -212,7 +227,7 @@ if __name__ == "__main__":
     # model parameters
     parser.add_argument("--fix_length", type=int, default=300)
     parser.add_argument("--hidden_size", type=int, default=256)
-    parser.add_argument("--embedding_size", type=int, default=100)
+    parser.add_argument("--embedding_size", type=int, default=100, choices=[100, 300])
     parser.add_argument("--dropout_rate", type=float, default=0.5)
 
     # training parameters

@@ -179,7 +179,7 @@ def get_loader(fix_length, vocab_threshold, batch_size):
     train_dataloader = DataLoader(dataset=train_dataset,
                                   batch_size=batch_size,
                                   # sampler=sampler,
-                                  shuffle=True,
+                                  shuffle=False,
                                   num_workers=4)
 
     valid_dataloader = DataLoader(dataset=valid_dataset,

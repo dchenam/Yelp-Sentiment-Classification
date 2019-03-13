@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from regularization import WeightDropout
 
 
 class SimpleLSTMModel(nn.Module):
@@ -71,8 +72,38 @@ class GloveModel(nn.Module):
 
         output_size = 5
 
-        self.embedding = nn.Embedding.from_pretrained(glove, freeze=False)
+        self.embedding = nn.Embedding.from_pretrained(glove)
         self.lstm = nn.LSTM(embedding_size, hidden_size)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.linear = nn.Linear(3 * hidden_size, output_size)
+
+    def forward(self, input, lengths):
+        embeddings = self.embedding(input)
+        embeddings = self.dropout(embeddings)
+        packed = pack_padded_sequence(embeddings, lengths, batch_first=True)
+
+        lstm_out, (hidden_state, cell_state) = self.lstm(packed, num_layers=2)
+        lstm_out, lengths = pad_packed_sequence(lstm_out)
+
+        # pool the lengths
+        avg_pool = F.adaptive_avg_pool1d(lstm_out.permute((1, 2, 0)), 1).squeeze()
+        max_pool = F.adaptive_max_pool1d(lstm_out.permute((1, 2, 0)), 1).squeeze()
+
+        # concat forward and pooled states
+        concat = torch.cat((hidden_state[-1, :, :], max_pool, avg_pool), dim=1)
+        out = self.linear(concat)
+        return out
+
+
+class BestModel(nn.Module):
+    def __init__(self, embedding_size, hidden_size, dropout_rate, glove):
+        super(BestModel, self).__init__()
+
+        output_size = 5
+
+        self.embedding = nn.Embedding.from_pretrained(glove)
+        self.lstm = WeightDropout(nn.LSTM(embedding_size, hidden_size, num_layers=2),
+                                  name_w=('weight_hh_l0', 'weight_hh_l1'))
         self.dropout = nn.Dropout(dropout_rate)
         self.linear = nn.Linear(3 * hidden_size, output_size)
 
@@ -85,11 +116,10 @@ class GloveModel(nn.Module):
         lstm_out, lengths = pad_packed_sequence(lstm_out)
 
         # pool the lengths
-        avg_pool = self.dropout(F.adaptive_avg_pool1d(lstm_out.permute((1, 2, 0)), 1).squeeze())
-        max_pool = self.dropout(F.adaptive_max_pool1d(lstm_out.permute((1, 2, 0)), 1).squeeze())
+        avg_pool = F.adaptive_avg_pool1d(lstm_out.permute((1, 2, 0)), 1).squeeze()
+        max_pool = F.adaptive_max_pool1d(lstm_out.permute((1, 2, 0)), 1).squeeze()
 
         # concat forward and pooled states
         concat = torch.cat((hidden_state[-1, :, :], max_pool, avg_pool), dim=1)
-        concat = self.dropout(concat)
         out = self.linear(concat)
         return out

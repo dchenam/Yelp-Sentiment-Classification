@@ -12,9 +12,15 @@ $ pip install requirements.txt
 
 **training and validating models**
 
+AWD-LSTM
+
+```bash
+$ python main.py --total_epochs 20
+```
+
 SimpleLSTM
 ```bash
-$ python main.py
+$ python main.py --model simple-lstm
 ```
 
 BidirectionalLSTM
@@ -29,13 +35,13 @@ $ python main.py --model bidirectional-lstm
 |-------------------|-------------------|---------------------|
 | SimpleLSTM        | 70.88%            | 67.2%               |
 | BidirectionalLSTM | 70.75%            | 68.56%              |
-| GloVe             |                   |                     |
+| AWD-LSTM          | 72.85%            | 69.37%              |
 | Bert              |                   |                     |
 
 **TODO List**
 - [X] baseline model
 - [X] bigger model
-- [ ] better preprocessing
-- [ ] class balancing
-- [ ] GloVe
+- [X] better preprocessing
+- [X] class balancing
+- [X] GloVe
 - [ ] BERT
