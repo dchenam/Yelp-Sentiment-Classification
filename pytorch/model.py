@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -95,9 +96,9 @@ class GloveModel(nn.Module):
         return out
 
 
-class BestModel(nn.Module):
+class AWDModel(nn.Module):
     def __init__(self, embedding_size, hidden_size, dropout_rate, fasttext):
-        super(BestModel, self).__init__()
+        super(AWDModel, self).__init__()
 
         output_size = 5
 
@@ -112,7 +113,7 @@ class BestModel(nn.Module):
         embeddings = self.dropout(embeddings)
         packed = pack_padded_sequence(embeddings, lengths, batch_first=True)
 
-        lstm_out, (hidden_state, cell_state) = self.lstm(packed)
+        lstm_out, hidden_state = self.lstm(packed)
         lstm_out, lengths = pad_packed_sequence(lstm_out)
 
         # pool the lengths
@@ -123,3 +124,65 @@ class BestModel(nn.Module):
         concat = torch.cat((hidden_state[-1, :, :], max_pool, avg_pool), dim=1)
         out = self.linear(concat)
         return out
+
+
+class HierarchicalAttentionModel(nn.Module):
+    def __init__(self, embedding_size, hidden_size, dropout_rate, fasttext):
+        super(HierarchicalAttentionModel, self).__init__()
+
+        output_size = 5
+
+        self.embedding = nn.Embedding.from_pretrained(fasttext)
+        self.lstm = WeightDropout(nn.LSTM(embedding_size, hidden_size, bidirectional=True),
+                                  name_w=('weight_hh_l0', 'weight_hh_l0_reverse'))
+
+        self.attention = WordSentenceAttention(2 * hidden_size)
+        self.linear = nn.Linear(2 * hidden_size, output_size)
+        self.dropout = nn.Dropout(dropout_rate)
+
+    def forward(self, input, lengths):
+        embeddings = self.embedding(input)
+        embeddings = self.dropout(embeddings)
+
+        packed = pack_padded_sequence(embeddings, lengths, batch_first=True)
+        lstm_out, _ = self.lstm(packed)
+        lstm_out, lengths = pad_packed_sequence(lstm_out, batch_first=True,
+                                                total_length=300)  # gru_out: (batch, length, 2 * hidden_size)
+
+        sentence = self.attention(lstm_out)
+        out = self.linear(sentence)
+        return out
+
+
+class WordSentenceAttention(nn.Module):
+    def __init__(self, hidden_size):
+        super(WordSentenceAttention, self).__init__()
+        self.context_weight = nn.Parameter(torch.Tensor(hidden_size).uniform_(-0.1, 0.1))
+        self.context_projection = nn.Linear(hidden_size, hidden_size)
+
+    def forward(self, context):
+        s1, s2, s3 = context.size()  # batch, length, hidden size
+
+        # create context projection
+        context_projection = torch.tanh(self.context_projection(context))  # (batch_size, length, hidden_size)
+
+        # calculate similarity value with context weight
+        attn_score = F.softmax(context_projection.matmul(self.context_weight), dim=1)
+
+        # reshape attention score and context to perform a element-wise multipication
+        attn_score = attn_score.view(s1 * s2).expand(s3, s1 * s2).reshape([s1 * s3, s2])
+        context = context.permute(2, 0, 1).reshape([s1 * s3, s2])
+        sentence = (context * attn_score).sum(1).view(s3, s1).transpose(0, 1)
+        return sentence
+
+
+if __name__ == '__main__':
+    s1 = 32
+    s2 = 10
+    s3 = 200
+    a = torch.randn(32, 10, 200)
+    attn = WordSentenceAttention(200)
+    b = attn(a)
+    b = b.view(1, s1 * s2).expand(s3, s1 * s2).reshape([s1 * s3, s2])
+    gru_out = a.permute(2, 0, 1).reshape([s1 * s3, s2])
+    sentence = (gru_out * b).sum(1).view(s1, s3)

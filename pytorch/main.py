@@ -7,7 +7,7 @@ import pandas as pd
 from tqdm import tqdm, trange
 
 from data_loader import get_loader
-from model import SimpleLSTMModel, ImprovedLSTMModel, GloveModel, BestModel
+from model import SimpleLSTMModel, ImprovedLSTMModel, GloveModel, AWDModel, HierarchicalAttentionModel
 
 # device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -50,7 +50,7 @@ def train_and_validate(model, model_path, train_data, valid_data, learning_rate,
             total += output.size(0)
 
         # print epoch accuracy
-        print(f"training accuracy: {correct}/{total} ", correct / total)
+        print("training accuracy: {}/{} ".format(correct, total), correct / total)
         valid_acc = validate(model, valid_data)
 
         # keep best acc model
@@ -117,7 +117,7 @@ def validate(model, valid_data):
             output = torch.argmax(output, 1)
             correct += (output == label).sum().item()
             total += output.size(0)
-    print(f"validation accuracy: {correct}/{total} ", correct / total)
+    print("validation accuracy: {}/{} ".format(correct, total), correct / total)
     return correct / total
 
 
@@ -146,10 +146,10 @@ def main(config):
     # model
     if config.model == "best":
         fasttext = vocab.get_embedding('fasttext', 300)
-        model = BestModel(300,
-                          config.hidden_size,
-                          config.dropout_rate,
-                          fasttext).to(device)
+        model = HierarchicalAttentionModel(300,
+                                           config.hidden_size,
+                                           config.dropout_rate,
+                                           fasttext).to(device)
 
     elif config.model == "simple-lstm":
         model = SimpleLSTMModel(config.embedding_size,
@@ -170,12 +170,12 @@ def main(config):
                            config.dropout_rate,
                            glove).to(device)
 
-    elif config.model == 'fasttext-lstm':
+    elif config.model == 'awd-lstm':
         fasttext = vocab.get_embedding('fasttext', 300)
-        model = GloveModel(300,
-                           config.hidden_size,
-                           config.dropout_rate,
-                           fasttext).to(device)
+        model = AWDModel(300,
+                         config.hidden_size,
+                         config.dropout_rate,
+                         fasttext).to(device)
 
     print("model loaded...")
 
@@ -215,7 +215,7 @@ if __name__ == "__main__":
 
     # setup parameters
     parser.add_argument("--model", type=str, default="best",
-                        choices=["best", "simple-lstm", "bidirectional-lstm", "glove-lstm", "fasttext-lstm", "ulm",
+                        choices=["best", "simple-lstm", "bidirectional-lstm", "glove-lstm", "awd-lstm", "ulm",
                                  "bert"])
     parser.add_argument('--data', type=str, default='.root')
     parser.add_argument("--model_dir", type=str, default='./models')
