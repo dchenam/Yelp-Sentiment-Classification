@@ -27,6 +27,7 @@ class WeightDropout(nn.Module):
 
     def forward(self, *args):
         self._setweights()
+        self.module.flatten_parameters()
         return self.module.forward(*args)
 
 

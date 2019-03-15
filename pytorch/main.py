@@ -24,10 +24,10 @@ def train_and_validate(model, model_path, train_data, valid_data, learning_rate,
         total = 0
         train_data = tqdm(train_data)
         model.train()
-        if cycles == 3:
+        if cycles == 2:
             print("switching to ASGD")
             optimizer = torch.optim.ASGD(model.parameters(), lr=learning_rate)
-        
+
         for i, (label, seq, length) in enumerate(train_data):
             # sort by descending order for packing
             length, permute = length.sort(dim=0, descending=True)
@@ -145,11 +145,11 @@ def main(config):
 
     # model
     if config.model == "best":
-        glove = vocab.get_embedding('fasttext', 300)
+        fasttext = vocab.get_embedding('fasttext', 300)
         model = BestModel(300,
                           config.hidden_size,
                           config.dropout_rate,
-                          glove).to(device)
+                          fasttext).to(device)
 
     elif config.model == "simple-lstm":
         model = SimpleLSTMModel(config.embedding_size,

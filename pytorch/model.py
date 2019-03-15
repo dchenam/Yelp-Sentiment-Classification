@@ -96,14 +96,14 @@ class GloveModel(nn.Module):
 
 
 class BestModel(nn.Module):
-    def __init__(self, embedding_size, hidden_size, dropout_rate, glove):
+    def __init__(self, embedding_size, hidden_size, dropout_rate, fasttext):
         super(BestModel, self).__init__()
 
         output_size = 5
 
-        self.embedding = nn.Embedding.from_pretrained(glove)
-        self.lstm = WeightDropout(nn.LSTM(embedding_size, hidden_size, num_layers=2),
-                                  name_w=('weight_hh_l0', 'weight_hh_l1'))
+        self.embedding = nn.Embedding.from_pretrained(fasttext)
+        self.lstm = WeightDropout(nn.LSTM(embedding_size, hidden_size, num_layers=3),
+                                  name_w=('weight_hh_l0', 'weight_hh_l1', 'weight_hh_l2'))
         self.dropout = nn.Dropout(dropout_rate)
         self.linear = nn.Linear(3 * hidden_size, output_size)
 

@@ -1,4 +1,5 @@
 import string
+import re
 import torch
 import nltk
 import numpy as np
@@ -16,6 +17,18 @@ stop_words = set(nltk.corpus.stopwords.words('english') + list(string.punctuatio
 
 
 # -------------- Helper Functions --------------
+
+def preprocess(text):
+    "Add spaces around / and #"
+    text = re.sub(r'([/#\n])', r' \1 ', text)
+    "Remove extra spaces"
+    text = re.sub(' {2,}', ' ', text)
+    "Removes any repeated characters > 2 to 2"
+    text = re.sub(r'(.)\1+', r'\1\1', text)
+    "Remove any numbers and words mixed within them"
+    text = re.sub(r'\w*\d\w*', '', text).strip()
+    "Remove 's -"
+    return text.replace("'s", "").replace("-", "")
 
 
 def tokenize(text):
@@ -96,7 +109,7 @@ class Vocab(object):
 
     def get_embedding(self, name, embedding_dim):
         if name == 'glove':
-            pretrained_type = vocab.GloVe(name='twitter.27B', dim=embedding_dim)
+            pretrained_type = vocab.GloVe(name='42B', dim=embedding_dim)
         elif name == 'fasttext':
             if embedding_dim != 300:
                 raise ValueError("Got embedding dim {}, expected size 300".format(embedding_dim))
@@ -112,6 +125,8 @@ class Vocab(object):
                 weights[index] = pretrained_type.vectors[pretrained_type.stoi[word]]
                 words_found += 1
             except KeyError:
+                if index == 0:
+                    continue
                 weights[index] = np.random.normal(scale=0.6, size=(embedding_dim))
 
         print(embedding_len - words_found, "words missing from pretrained")
@@ -133,11 +148,14 @@ class SentimentDataset(Dataset):
     def __init__(self, path, fix_length, threshold, vocab=None):
         df = pd.read_csv(path)
 
-        # pre-process
+        # preprocess
+        df["text"] = df["text"].progress_apply(preprocess)
+
+        # tokenize
         df['words'] = df["text"].progress_apply(tokenize)
 
         # take lengths of words, with fixed max length
-        df['lengths'] = df['words'].progress_apply(lambda x: fix_length if len(x) > fix_length else len(x))
+        df['lengths'] = df['words'].apply(lambda x: fix_length if len(x) > fix_length else len(x))
 
         # filter out rows with lengths of 0
         df = df.loc[df['lengths'] >= 1]
@@ -146,7 +164,7 @@ class SentimentDataset(Dataset):
         self.vocab = build_vocab(df['words'], threshold, vocab)
 
         # change class indices to 0 - 4
-        labels = df["stars"].progress_apply(int) - 1
+        labels = df["stars"].apply(int) - 1
 
         # pad to fix length & numericalize
         seqs = get_sequence(df['words'], fix_length, self.vocab.word2idx)
@@ -179,7 +197,7 @@ def get_loader(fix_length, vocab_threshold, batch_size):
     train_dataloader = DataLoader(dataset=train_dataset,
                                   batch_size=batch_size,
                                   # sampler=sampler,
-                                  shuffle=False,
+                                  shuffle=True,
                                   num_workers=4)
 
     valid_dataloader = DataLoader(dataset=valid_dataset,
