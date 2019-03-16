@@ -8,7 +8,7 @@ import pandas as pd
 from collections import Counter
 from tqdm import tqdm
 from torchtext import vocab
-from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+from torch.utils.data import Dataset, DataLoader
 
 # for progress bar during pandas ops
 tqdm.pandas()
@@ -140,6 +140,7 @@ class SentimentDataset(Dataset):
     Defines a dataset composed of sentiment text and labels
 
     Attributes:
+        df (Dataframe): Dataframe of the CSV from teh path
         vocab (dict{str: int}: A vocabulary dictionary from word to indices for this dataset
         sample_weights(ndarray, shape(len(labels),)): An array with each sample_weight[i] as the weight of the ith sample
         data (list[int, [int]]): The data in the set
@@ -147,6 +148,8 @@ class SentimentDataset(Dataset):
 
     def __init__(self, path, fix_length, threshold, vocab=None):
         df = pd.read_csv(path)
+
+        self.df = df
 
         # preprocess
         df["text"] = df["text"].progress_apply(preprocess)
@@ -190,13 +193,10 @@ def get_loader(fix_length, vocab_threshold, batch_size):
 
     valid_dataset = SentimentDataset("data/valid.csv", fix_length, vocab_threshold, vocab)
 
-    # test_dataset = SentimentDataset("data/test.csv", fix_length=300, vocab=vocab)
-
-    # sampler = WeightedRandomSampler(train_dataset.samples_weight, len(train_dataset.samples_weight))
+    test_dataset = SentimentDataset("data/test.csv", fix_length, vocab_threshold, vocab)
 
     train_dataloader = DataLoader(dataset=train_dataset,
                                   batch_size=batch_size,
-                                  # sampler=sampler,
                                   shuffle=True,
                                   num_workers=4)
 
@@ -204,5 +204,9 @@ def get_loader(fix_length, vocab_threshold, batch_size):
                                   batch_size=batch_size,
                                   shuffle=False,
                                   num_workers=4)
+    test_dataloader = DataLoader(dataset=test_dataset,
+                                 batch_size=batch_size,
+                                 shuffle=False,
+                                 num_workers=4)
 
-    return train_dataloader, valid_dataloader, vocab
+    return train_dataloader, valid_dataloader, test_dataloader, vocab

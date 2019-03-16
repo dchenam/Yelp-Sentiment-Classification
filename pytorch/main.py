@@ -7,7 +7,7 @@ import pandas as pd
 from tqdm import tqdm, trange
 
 from data_loader import get_loader
-from model import SimpleLSTMModel, ImprovedLSTMModel, GloveModel, AWDModel, HierarchicalAttentionModel
+from model import SimpleLSTMModel, ImprovedLSTMModel, GloveModel, AWDModel
 
 # device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -24,7 +24,7 @@ def train_and_validate(model, model_path, train_data, valid_data, learning_rate,
         total = 0
         train_data = tqdm(train_data)
         model.train()
-        if cycles == 2:
+        if cycles == 3:
             print("switching to ASGD")
             optimizer = torch.optim.ASGD(model.parameters(), lr=learning_rate)
 
@@ -124,10 +124,21 @@ def validate(model, valid_data):
 def predict(model, test_data):
     model.eval()
     prediction = []
-    for i, (seq, length) in enumerate(tqdm(test_data)):
-        output, length = model(seq, length)
-        output = torch.argmax(output) + 1
-        prediction.extend(output.cpu())
+    for i, (_, seq, length) in enumerate(tqdm(test_data)):
+        # sort by descending order for packing
+        length, sort_indices = length.sort(dim=0, descending=True)
+        _, unsort_indices = torch.sort(sort_indices, dim=0)
+        seq = seq[sort_indices]
+
+        # convert to cuda
+        seq = seq.to(device)
+
+        output = model(seq, length)
+        output = torch.argmax(output, 1) + 1
+        # unsort output
+        output = output.cpu().index_select(0, unsort_indices)
+        prediction.extend(output.tolist())
+
     return prediction
 
 
@@ -137,7 +148,7 @@ def main(config):
         os.makedirs(config.model_dir)
 
     # load data
-    train_data, valid_data, vocab = get_loader(
+    train_data, valid_data, test_data, vocab = get_loader(
         fix_length=config.fix_length,
         vocab_threshold=config.vocab_threshold,
         batch_size=config.batch_size
@@ -146,10 +157,10 @@ def main(config):
     # model
     if config.model == "best":
         fasttext = vocab.get_embedding('fasttext', 300)
-        model = HierarchicalAttentionModel(300,
-                                           config.hidden_size,
-                                           config.dropout_rate,
-                                           fasttext).to(device)
+        model = AWDModel(300,
+                         config.hidden_size,
+                         config.dropout_rate,
+                         fasttext).to(device)
 
     elif config.model == "simple-lstm":
         model = SimpleLSTMModel(config.embedding_size,
@@ -179,13 +190,6 @@ def main(config):
 
     print("model loaded...")
 
-    # train
-    # train(model,
-    #       train_data,
-    #       config.learning_rate,
-    #       config.total_epoch,
-    #       config.logging_rate)
-
     train_and_validate(model,
                        os.path.join(config.model_dir, "{}.pkl".format(config.model)),
                        train_data,
@@ -193,21 +197,14 @@ def main(config):
                        config.learning_rate,
                        config.total_epoch)
 
-    # save
-    # torch.save(model.state_dict(), os.path.join(config.model_dir, "{}.pkl".format(config.model)))
+    # model.load_state_dict(torch.load(os.path.join(config.model_dir, "{}.pkl".format(config.model))))
 
-    # validate
-    # validate(model, valid_data)
-
-    # prediction
-    # model.load_state_dict(torch.load("{}.pkl".format(config.model))
-    # id_list = None
-    # test_data = None
-    # output = predict(model, test_data)
-    # sub_df = pd.DataFrame()
-    # sub_df["review_id"] = id_list
-    # sub_df["pre"] = output
-    # sub_df.to_csv("pre.csv", index=False)
+    output = predict(model, test_data)
+    sub_df = pd.DataFrame()
+    sub_df["review_id"] = test_data.dataset.df['review_id']
+    sub_df["pre"] = output
+    sub_df["text"] = test_data.dataset.df['text']
+    sub_df.to_csv("pre.csv", index=False)
 
 
 if __name__ == "__main__":
@@ -215,8 +212,7 @@ if __name__ == "__main__":
 
     # setup parameters
     parser.add_argument("--model", type=str, default="best",
-                        choices=["best", "simple-lstm", "bidirectional-lstm", "glove-lstm", "awd-lstm", "ulm",
-                                 "bert"])
+                        choices=["best", "simple-lstm", "bidirectional-lstm", "glove-lstm", "awd-lstm"])
     parser.add_argument('--data', type=str, default='.root')
     parser.add_argument("--model_dir", type=str, default='./models')
     parser.add_argument("--vocab_path", type=str, default='vocab.pkl')
