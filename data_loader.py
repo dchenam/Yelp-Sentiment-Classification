@@ -204,6 +204,7 @@ def get_loader(fix_length, vocab_threshold, batch_size):
                                   batch_size=batch_size,
                                   shuffle=False,
                                   num_workers=4)
+
     test_dataloader = DataLoader(dataset=test_dataset,
                                  batch_size=batch_size,
                                  shuffle=False,
